@@ -67,6 +67,49 @@ class AgentAIService:
         except (APIError, APIConnectionError, APIStatusError) as e:
             raise Exception(f"Groq API error: {str(e)}")
 
+    def generate_system_prompt(
+        self,
+        description: str,
+        name: Optional[str] = None,
+        tone: Optional[str] = None,
+    ) -> str:
+        """Turn a short product description into a master system prompt."""
+        tone = (tone or "professional, clear, and helpful").strip()
+        name_line = f'Agent name: "{name}".' if name else ""
+
+        try:
+            response = self._require_client().chat.completions.create(
+                model=self.model,
+                max_tokens=700,
+                temperature=0.4,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You write master system prompts for production voice/chat agents. "
+                            "Return ONLY the system prompt text — no markdown fences, no commentary. "
+                            "Include: role, goals, tone, what to ask for, what never to do, "
+                            "and how to handle uncertainty. Keep it under 350 words."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{name_line}\n"
+                            f"Desired tone: {tone}\n"
+                            f"Business / agent description:\n{description.strip()}"
+                        ),
+                    },
+                ],
+            )
+            text = (response.choices[0].message.content or "").strip()
+            text = re.sub(r"^```(?:\w+)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
+            if not text:
+                raise Exception("Empty prompt from model")
+            return text
+        except (APIError, APIConnectionError, APIStatusError) as e:
+            raise Exception(f"Groq API error: {str(e)}")
+
     def analyze_transcript(self, transcript: str) -> dict:
         """
         Analyze a call transcript for quality score and key topics.

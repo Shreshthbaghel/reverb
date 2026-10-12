@@ -1,13 +1,18 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
+import os
 from ..models.agent import Agent
 from ..models.call import CallLog
 from ..db import get_db
+from ..services.ai_service import ai_service
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
+
+FRONTEND_BASE = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 # ─── Schemas ────────────────────────────────────────────────────────────────
@@ -38,7 +43,63 @@ class AgentResponse(BaseModel):
         from_attributes = True
 
 
+class AgentPublic(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class GeneratePromptRequest(BaseModel):
+    description: str = Field(..., min_length=10)
+    name: Optional[str] = None
+    tone: Optional[str] = "professional, clear, and helpful"
+
+
+class GeneratePromptResponse(BaseModel):
+    system_prompt: str
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    history: Optional[List[ChatMessage]] = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    history: List[ChatMessage]
+
+
+class EmbedSnippetResponse(BaseModel):
+    agent_id: int
+    embed_url: str
+    script_tag: str
+    iframe_tag: str
+
+
 # ─── Endpoints ──────────────────────────────────────────────────────────────
+
+@router.post("/generate-prompt", response_model=GeneratePromptResponse)
+def generate_prompt(payload: GeneratePromptRequest):
+    """Generate a master system prompt from a short description via Groq."""
+    try:
+        prompt = ai_service.generate_system_prompt(
+            description=payload.description,
+            name=payload.name,
+            tone=payload.tone,
+        )
+        return GeneratePromptResponse(system_prompt=prompt)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("/", response_model=AgentResponse)
 def create_agent(
@@ -76,6 +137,79 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
+
+
+@router.get("/{agent_id}/public", response_model=AgentPublic)
+def get_agent_public(agent_id: int, db: Session = Depends(get_db)):
+    """Public agent metadata for embed widgets (no system prompt)."""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.status != "active":
+        raise HTTPException(status_code=403, detail="Agent is not active")
+    return agent
+
+
+@router.post("/{agent_id}/chat", response_model=ChatResponse)
+def chat_with_agent(
+    agent_id: int,
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+):
+    """Public chat endpoint used by the embeddable widget."""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.status != "active":
+        raise HTTPException(status_code=403, detail="Agent is not active")
+
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in (payload.history or [])
+        if m.role in ("user", "assistant") and m.content.strip()
+    ][-12:]
+
+    try:
+        reply, updated = ai_service.generate_response(
+            system_prompt=agent.system_prompt,
+            user_message=payload.message.strip(),
+            conversation_history=history,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return ChatResponse(
+        reply=reply,
+        history=[ChatMessage(role=m["role"], content=m["content"]) for m in updated],
+    )
+
+
+@router.get("/{agent_id}/embed", response_model=EmbedSnippetResponse)
+def get_embed_snippet(agent_id: int, db: Session = Depends(get_db)):
+    """Return HTML snippets to embed this agent on any site."""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    embed_url = f"{FRONTEND_BASE.rstrip('/')}/embed/{agent_id}"
+    script_src = f"{FRONTEND_BASE.rstrip('/')}/embed.js"
+    script_tag = (
+        f'<script src="{script_src}" data-agent-id="{agent_id}" '
+        f'data-base="{FRONTEND_BASE.rstrip("/")}" '
+        f'data-api="{API_BASE.rstrip("/")}" async></script>'
+    )
+    iframe_tag = (
+        f'<iframe src="{embed_url}" title="{agent.name} agent" '
+        f'width="380" height="560" style="border:0;border-radius:14px;'
+        f'box-shadow:0 12px 40px rgba(0,0,0,.18);" '
+        f'allow="clipboard-write"></iframe>'
+    )
+    return EmbedSnippetResponse(
+        agent_id=agent_id,
+        embed_url=embed_url,
+        script_tag=script_tag,
+        iframe_tag=iframe_tag,
+    )
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)

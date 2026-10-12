@@ -45,20 +45,20 @@ const STEPS = [
 
 const FEATURES = [
   {
-    title: 'Agent console',
-    body: 'Create, edit, and deactivate agents with system prompts and descriptions from a clean operator UI.',
+    title: 'Description → master prompt',
+    body: 'Describe the agent in plain language; Groq drafts an editable system prompt you can refine before publishing.',
+  },
+  {
+    title: 'One-line HTML embed',
+    body: 'Copy a script or iframe tag into any site. Visitors chat with your agent through a hosted widget.',
   },
   {
     title: 'Call intelligence',
     body: 'Transcripts, success filters, duration, and response quality — ready for portfolio walkthroughs.',
   },
   {
-    title: 'Analytics surface',
-    body: 'Per-agent totals, success rate, average duration, and quality aggregated from the call log API.',
-  },
-  {
     title: 'FastAPI backend',
-    body: 'Typed routes, SQLAlchemy models, health checks, CORS, and OpenAPI docs at /docs.',
+    body: 'Typed routes, public chat API, SQLAlchemy models, CORS for embeds, and OpenAPI docs at /docs.',
   },
 ];
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
+import EmbedSnippet from './EmbedSnippet';
 import {
   IconBot, IconRefresh, IconEdit, IconTrash, IconChevron, IconPlus,
 } from './Icons';
@@ -8,6 +9,7 @@ export default function AgentsList({ onCreateAgent }) {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedAgent, setExpandedAgent] = useState(null);
+  const [embedAgent, setEmbedAgent] = useState(null);
   const [analytics, setAnalytics] = useState({});
   const [editingAgent, setEditingAgent] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -184,6 +186,14 @@ export default function AgentsList({ onCreateAgent }) {
                     Analytics
                     <IconChevron up={expandedAgent === agent.id} />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmbedAgent(embedAgent === agent.id ? null : agent.id)}
+                    className="btn-ghost text-xs"
+                  >
+                    Embed
+                    <IconChevron up={embedAgent === agent.id} />
+                  </button>
 
                   {editingAgent === agent.id ? (
                     <>
@@ -241,6 +251,12 @@ export default function AgentsList({ onCreateAgent }) {
                   <p className="text-sm line-clamp-2" style={{ color: 'var(--ink-soft)', lineHeight: 1.55 }}>
                     {agent.system_prompt}
                   </p>
+                </div>
+              )}
+
+              {embedAgent === agent.id && (
+                <div className="mt-4">
+                  <EmbedSnippet agentId={agent.id} agentName={agent.name} />
                 </div>
               )}
             </div>

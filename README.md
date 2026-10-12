@@ -77,10 +77,11 @@ Console: `http://localhost:5173/app`
 ## Features
 
 - Marketing landing page (portfolio / resume walkthrough)
-- Agent CRUD
-- Call logging with transcripts
-- Analytics dashboard
-- Groq LLM for responses and transcript scoring
+- Description → Groq-generated master system prompt
+- Embeddable widget (`embed.js` / iframe) for third-party sites
+- Public agent chat API for embeds
+- Agent CRUD + call logging + analytics
+- Groq LLM for replies and transcript scoring
 - REST API with OpenAPI docs
 
 ## Phase 2 Roadmap

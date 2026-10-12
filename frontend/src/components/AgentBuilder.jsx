@@ -1,26 +1,23 @@
 import React, { useState } from 'react';
 import { api } from '../api';
+import EmbedSnippet from './EmbedSnippet';
 
 const TEMPLATES = [
   {
     label: 'Customer support',
-    prompt:
-      'You are a friendly and professional customer support agent. Help users with questions about products, orders, and services. Be empathetic and solution-oriented. Always ask if there is anything else you can help with.',
+    description: 'Help customers with products, orders, refunds, and account questions for an online store.',
   },
   {
     label: 'Appointment booking',
-    prompt:
-      'You are a scheduling assistant. Help callers book, reschedule, or cancel appointments. Collect their name, preferred date/time, and reason for visit. Confirm all details before finalizing.',
+    description: 'Schedule, reschedule, or cancel appointments. Collect name, preferred time, and reason for visit.',
   },
   {
     label: 'Real estate inquiry',
-    prompt:
-      'You are a knowledgeable real estate assistant. Help potential buyers and renters with property inquiries, pricing, availability, and schedule viewings. Be professional and informative.',
+    description: 'Answer property questions, pricing, availability, and help book viewings for buyers and renters.',
   },
   {
     label: 'Restaurant orders',
-    prompt:
-      'You are a restaurant ordering assistant. Help customers browse the menu, take their order, handle special requests and dietary restrictions, and confirm pickup or delivery details.',
+    description: 'Take food orders, handle dietary restrictions, and confirm pickup or delivery details.',
   },
 ];
 
@@ -29,17 +26,49 @@ export default function AgentBuilder({ onAgentCreated }) {
     name: '',
     system_prompt: '',
     description: '',
+    tone: 'professional, clear, and helpful',
   });
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+  const [createdAgent, setCreatedAgent] = useState(null);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const applyTemplate = (template) => {
-    setFormData({ ...formData, system_prompt: template.prompt });
+    setFormData({
+      ...formData,
+      name: formData.name || template.label,
+      description: template.description,
+    });
+  };
+
+  const generatePrompt = async () => {
+    if (!formData.description.trim() || formData.description.trim().length < 10) {
+      setMessage('Add a description of at least 10 characters before generating the prompt');
+      setMessageType('error');
+      return;
+    }
+
+    setGenerating(true);
+    setMessage('');
+    try {
+      const res = await api.post('/api/agents/generate-prompt', {
+        description: formData.description,
+        name: formData.name || undefined,
+        tone: formData.tone || undefined,
+      });
+      setFormData((prev) => ({ ...prev, system_prompt: res.data.system_prompt }));
+      setMessage('Master prompt generated — review and edit before creating the agent');
+      setMessageType('success');
+    } catch (error) {
+      setMessage(error.response?.data?.detail || error.message);
+      setMessageType('error');
+    }
+    setGenerating(false);
   };
 
   const handleSubmit = async (e) => {
@@ -54,11 +83,23 @@ export default function AgentBuilder({ onAgentCreated }) {
     setLoading(true);
     setMessage('');
     try {
-      const response = await api.post('/api/agents/', formData);
-      setMessage(`Agent "${response.data.name}" created`);
+      const response = await api.post('/api/agents/', {
+        name: formData.name,
+        system_prompt: formData.system_prompt,
+        description: formData.description || null,
+      });
+      setMessage(`Agent "${response.data.name}" created — copy the embed tag below`);
       setMessageType('success');
-      setFormData({ name: '', system_prompt: '', description: '' });
-      if (onAgentCreated) onAgentCreated();
+      setCreatedAgent(response.data);
+      setFormData({
+        name: '',
+        system_prompt: '',
+        description: '',
+        tone: 'professional, clear, and helpful',
+      });
+      if (onAgentCreated) {
+        // Delay navigation so user can copy embed; parent can still refresh list later
+      }
     } catch (error) {
       setMessage(error.response?.data?.detail || error.message);
       setMessageType('error');
@@ -71,11 +112,13 @@ export default function AgentBuilder({ onAgentCreated }) {
       <div className="mb-7">
         <span className="eyebrow">Create</span>
         <h1 className="page-title">New agent</h1>
-        <p className="page-sub">Define name, behavior, and optional description</p>
+        <p className="page-sub">
+          Describe the agent, generate a master prompt with Groq, then embed it on any site
+        </p>
       </div>
 
       <div className="panel p-4 mb-4">
-        <p className="mono-label mb-3">Prompt templates</p>
+        <p className="mono-label mb-3">Quick descriptions</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {TEMPLATES.map((t) => (
             <button
@@ -108,37 +151,73 @@ export default function AgentBuilder({ onAgentCreated }) {
         </div>
 
         <div>
+          <label className="label" htmlFor="description-input">
+            Description <span style={{ color: 'var(--accent)' }}>*</span>
+          </label>
+          <textarea
+            id="description-input"
+            name="description"
+            value={formData.description}
+            onChange={handleChange}
+            placeholder="Describe what this agent should do, for whom, and any rules…"
+            rows={4}
+            className="input resize-y"
+            required
+          />
+          <p className="page-sub !text-xs mt-1.5">
+            Used to auto-generate the master system prompt.
+          </p>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="tone-input">Tone</label>
+          <input
+            id="tone-input"
+            type="text"
+            name="tone"
+            value={formData.tone}
+            onChange={handleChange}
+            placeholder="professional, clear, and helpful"
+            className="input"
+          />
+        </div>
+
+        <button
+          type="button"
+          className="btn-accent w-full"
+          onClick={generatePrompt}
+          disabled={generating}
+        >
+          {generating ? (
+            <span className="flex items-center justify-center gap-2">
+              <span
+                className="spinner"
+                style={{ width: 16, height: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }}
+              />
+              Generating master prompt…
+            </span>
+          ) : (
+            'Generate master prompt with Groq'
+          )}
+        </button>
+
+        <div>
           <label className="label" htmlFor="system-prompt-input">
-            System prompt <span style={{ color: 'var(--accent)' }}>*</span>
+            Master system prompt <span style={{ color: 'var(--accent)' }}>*</span>
           </label>
           <textarea
             id="system-prompt-input"
             name="system_prompt"
             value={formData.system_prompt}
             onChange={handleChange}
-            placeholder="Describe how the agent should behave, tone, and goals..."
-            rows={7}
+            placeholder="Click generate above, or write the prompt manually…"
+            rows={8}
             className="input resize-y"
             required
           />
           <p className="page-sub !text-xs mt-1.5">
-            Controls personality, tone, and what the agent is allowed to do.
+            Always review and edit before publishing — this is what the embed widget uses.
           </p>
-        </div>
-
-        <div>
-          <label className="label" htmlFor="description-input">
-            Description <span style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>(optional)</span>
-          </label>
-          <input
-            id="description-input"
-            type="text"
-            name="description"
-            value={formData.description}
-            onChange={handleChange}
-            placeholder="Short note for your team"
-            className="input"
-          />
         </div>
 
         <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
@@ -151,7 +230,7 @@ export default function AgentBuilder({ onAgentCreated }) {
               Creating…
             </span>
           ) : (
-            'Create agent'
+            'Create agent & get embed code'
           )}
         </button>
 
@@ -161,6 +240,26 @@ export default function AgentBuilder({ onAgentCreated }) {
           </div>
         )}
       </form>
+
+      {createdAgent && (
+        <div className="panel p-5 mt-4 space-y-3">
+          <div>
+            <span className="eyebrow">Ready to ship</span>
+            <h2 className="page-title" style={{ fontSize: '1.25rem' }}>
+              Embed {createdAgent.name}
+            </h2>
+            <p className="page-sub">
+              Drop the HTML tag into any project — visitors chat with this agent live.
+            </p>
+          </div>
+          <EmbedSnippet agentId={createdAgent.id} agentName={createdAgent.name} />
+          {onAgentCreated && (
+            <button type="button" className="btn-secondary w-full" onClick={onAgentCreated}>
+              Done — go to agents
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
